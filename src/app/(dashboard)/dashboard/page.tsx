@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { PlusIcon } from "lucide-react";
 import { DeleteListButton } from "@/components/DeleteListButton";
 import { SignOutButton } from "@/components/SignOutButton";
+import { ImportListButton } from "@/components/ImportListButton";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -36,10 +37,13 @@ export default async function DashboardPage() {
       <main className="max-w-3xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold">Jouw lijsten</h2>
-          <Link href="/lists/new" className={cn(buttonVariants({ size: "sm" }))}>
-            <PlusIcon className="w-4 h-4 mr-1" />
-            Nieuwe lijst
-          </Link>
+          <div className="flex gap-2">
+            <ImportListButton />
+            <Link href="/lists/new" className={cn(buttonVariants({ size: "sm" }))}>
+              <PlusIcon className="w-4 h-4 mr-1" />
+              Nieuwe lijst
+            </Link>
+          </div>
         </div>
 
         {userLists.length === 0 ? (

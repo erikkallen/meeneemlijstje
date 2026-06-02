@@ -6,7 +6,7 @@ import { eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ArrowLeftIcon, PrinterIcon } from "lucide-react";
+import { ArrowLeftIcon, PrinterIcon, DownloadIcon } from "lucide-react";
 import { ListAdminView } from "@/components/ListAdminView";
 
 export default async function ListAdminPage({
@@ -73,14 +73,23 @@ export default async function ListAdminPage({
             </Link>
             <h1 className="font-semibold truncate max-w-xs">{list.name}</h1>
           </div>
-          <Link
-            href={`/lists/${id}/print`}
-            target="_blank"
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-          >
-            <PrinterIcon className="w-4 h-4 mr-1" />
-            Afdrukken
-          </Link>
+          <div className="flex gap-2">
+            <a
+              href={`/api/lists/${id}/export`}
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              <DownloadIcon className="w-4 h-4 mr-1" />
+              Exporteren
+            </a>
+            <Link
+              href={`/lists/${id}/print`}
+              target="_blank"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              <PrinterIcon className="w-4 h-4 mr-1" />
+              Afdrukken
+            </Link>
+          </div>
         </div>
       </header>
 
