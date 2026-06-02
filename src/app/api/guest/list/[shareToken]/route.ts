@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { lists, categories, items, claims, guestSessions } from "@/lib/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { lists, categories, items, guestSessions } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { cookies } from "next/headers";
+import { fetchClaimsForList } from "@/lib/fetchClaims";
 
 export async function GET(
   req: Request,
@@ -13,7 +14,6 @@ export async function GET(
   const [list] = await db.select().from(lists).where(eq(lists.shareToken, shareToken)).limit(1);
   if (!list) return NextResponse.json({ error: "List not found" }, { status: 404 });
 
-  // Identify guest from cookie
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get("meeneemlijst_guest")?.value;
   let currentGuest = null;
@@ -38,47 +38,10 @@ export async function GET(
     .where(eq(items.listId, list.id))
     .orderBy(items.sortOrder);
 
-  const itemIds = listItems.map((i) => i.id);
-  let allClaims: Array<{
-    id: string;
-    itemId: string;
-    guestSessionId: string | null;
-    userId: string | null;
-    quantity: number;
-    claimerName?: string;
-  }> = [];
-
-  if (itemIds.length > 0) {
-    const rawClaims = await db
-      .select({
-        id: claims.id,
-        itemId: claims.itemId,
-        guestSessionId: claims.guestSessionId,
-        userId: claims.userId,
-        quantity: claims.quantity,
-      })
-      .from(claims)
-      .where(inArray(claims.itemId, itemIds));
-
-    const guestIds = rawClaims
-      .map((c) => c.guestSessionId)
-      .filter((id): id is string => id !== null);
-
-    const guests =
-      guestIds.length > 0
-        ? await db
-            .select({ id: guestSessions.id, name: guestSessions.name })
-            .from(guestSessions)
-            .where(inArray(guestSessions.id, guestIds))
-        : [];
-
-    allClaims = rawClaims.map((c) => ({
-      ...c,
-      claimerName: list.showWhoBrings
-        ? guests.find((g) => g.id === c.guestSessionId)?.name ?? "Someone"
-        : undefined,
-    }));
-  }
+  const allClaims = await fetchClaimsForList(
+    listItems.map((i) => i.id),
+    list.showWhoBrings
+  );
 
   return NextResponse.json({
     list: {

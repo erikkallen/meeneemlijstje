@@ -59,6 +59,19 @@ export function GuestItemsView({
     fetchData();
   }, [fetchData]);
 
+  // SSE: receive claim updates pushed by the server
+  useEffect(() => {
+    if (!data) return;
+    const es = new EventSource(`/api/guest/list/${shareToken}/stream`);
+    es.onmessage = (e) => {
+      const claims = JSON.parse(e.data);
+      setData((prev) => (prev ? { ...prev, claims } : prev));
+    };
+    es.onerror = () => es.close();
+    return () => es.close();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareToken, !data]);
+
   async function claim(itemId: string) {
     setActionLoading(itemId);
     const res = await fetch("/api/claims", {
