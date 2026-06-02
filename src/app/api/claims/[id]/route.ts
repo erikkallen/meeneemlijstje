@@ -12,6 +12,11 @@ async function verifyClaimer(claimId: string) {
   const session = await auth();
 
   if (session) {
+    // Allow list owner to release any claim on their list
+    const [item] = await db.select().from(items).where(eq(items.id, claim.itemId)).limit(1);
+    const [list] = await db.select().from(lists).where(eq(lists.id, item.listId)).limit(1);
+    if (list.ownerId === session.user.id) return { claim };
+    // Otherwise must be the claimant themselves
     if (claim.userId !== session.user.id) return { error: "Forbidden", status: 403 } as const;
   } else {
     const cookieStore = await cookies();

@@ -38,10 +38,11 @@ type EditState = {
   quantityNeeded: number;
 };
 
-export function ListAdminView({ list: initialList, categories: initialCategories, items: initialItems, claims, guests, shareUrl }: Props) {
+export function ListAdminView({ list: initialList, categories: initialCategories, items: initialItems, claims: initialClaims, guests, shareUrl }: Props) {
   const [list, setList] = useState(initialList);
   const [categories, setCategories] = useState(initialCategories);
   const [items, setItems] = useState(initialItems);
+  const [claims, setClaims] = useState(initialClaims);
   const [copied, setCopied] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
@@ -137,9 +138,15 @@ export function ListAdminView({ list: initialList, categories: initialCategories
     setAddingItem(false);
   }
 
+  async function releaseClaim(id: string) {
+    await fetch(`/api/claims/${id}`, { method: "DELETE" });
+    setClaims(claims.filter((c) => c.id !== id));
+  }
+
   async function deleteItem(id: string) {
     await fetch(`/api/items/${id}`, { method: "DELETE" });
     setItems(items.filter((i) => i.id !== id));
+    setClaims(claims.filter((c) => c.itemId !== id));
     if (editingItemId === id) {
       setEditingItemId(null);
       setEditState(null);
@@ -456,11 +463,22 @@ export function ListAdminView({ list: initialList, categories: initialCategories
                                 ×{item.quantityNeeded}
                               </Badge>
                             )}
-                            {itemClaims.length > 0 && (
-                              <span className="text-xs text-muted-foreground">
-                                {itemClaims.map(claimerName).join(", ")}
+                            {itemClaims.map((claim) => (
+                              <span
+                                key={claim.id}
+                                className="inline-flex items-center gap-1 text-xs bg-muted px-1.5 py-0.5 rounded-full"
+                              >
+                                {claimerName(claim)}
+                                {claim.quantity > 1 && <span className="text-muted-foreground">×{claim.quantity}</span>}
+                                <button
+                                  onClick={() => releaseClaim(claim.id)}
+                                  className="text-muted-foreground hover:text-destructive ml-0.5 leading-none"
+                                  title="Claim vrijgeven"
+                                >
+                                  <XIcon className="w-3 h-3" />
+                                </button>
                               </span>
-                            )}
+                            ))}
                           </div>
                           {item.description && (
                             <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
