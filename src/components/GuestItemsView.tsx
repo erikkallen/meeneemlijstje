@@ -198,7 +198,9 @@ export function GuestItemsView({
                           </span>
                           {item.quantityNeeded > 1 && (
                             <Badge variant="secondary" className="text-xs">
-                              {total}/{item.quantityNeeded}
+                              {list.allowMultipleClaimants
+                                ? `${total}/${item.quantityNeeded}`
+                                : `×${item.quantityNeeded}`}
                             </Badge>
                           )}
                           {isFull && !myClaim && (
