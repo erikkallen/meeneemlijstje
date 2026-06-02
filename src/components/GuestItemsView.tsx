@@ -19,6 +19,7 @@ type ClaimRow = {
   itemId: string;
   guestSessionId: string | null;
   userId: string | null;
+  quantity: number;
   claimerName?: string;
 };
 type ListData = {
@@ -77,9 +78,24 @@ export function GuestItemsView({
     const res = await fetch("/api/claims", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemId }),
+      body: JSON.stringify({ itemId, quantity: 1 }),
     });
     if (res.ok) await fetchData();
+    setActionLoading(null);
+  }
+
+  async function adjustQuantity(claimId: string, itemId: string, newQty: number) {
+    setActionLoading(itemId);
+    if (newQty === 0) {
+      await fetch(`/api/claims/${claimId}`, { method: "DELETE" });
+    } else {
+      await fetch(`/api/claims/${claimId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity: newQty }),
+      });
+    }
+    await fetchData();
     setActionLoading(null);
   }
 
@@ -114,14 +130,21 @@ export function GuestItemsView({
     return myClaims.find((c) => c.itemId === itemId);
   }
 
-  function totalClaimsForItem(itemId: string) {
-    return claims.filter((c) => c.itemId === itemId).length;
+  function totalQuantityForItem(itemId: string) {
+    return claims
+      .filter((c) => c.itemId === itemId)
+      .reduce((sum, c) => sum + (c.quantity ?? 1), 0);
   }
 
   function canClaim(item: Item) {
-    const total = totalClaimsForItem(item.id);
+    const total = totalQuantityForItem(item.id);
     if (list.allowMultipleClaimants) return total < item.quantityNeeded;
-    return total === 0;
+    // Single-claimant mode: nobody else may have a claim
+    return !claims.some((c) => c.itemId === item.id);
+  }
+
+  function canIncreaseQty(item: Item) {
+    return totalQuantityForItem(item.id) + 1 <= item.quantityNeeded;
   }
 
   function claimersForItem(itemId: string): string[] {
@@ -180,7 +203,7 @@ export function GuestItemsView({
             <div className="space-y-2">
               {(grouped[group.id] ?? []).map((item) => {
                 const myClaim = myClaimForItem(item.id);
-                const total = totalClaimsForItem(item.id);
+                const total = totalQuantityForItem(item.id);
                 const claimers = claimersForItem(item.id);
                 const isFull = !canClaim(item) && !myClaim;
                 const isLoading = actionLoading === item.id;
@@ -223,20 +246,29 @@ export function GuestItemsView({
                       </div>
                       <div className="shrink-0">
                         {myClaim ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => unclaim(myClaim.id, item.id)}
-                            disabled={isLoading}
-                            className="text-primary border-primary/40"
-                          >
-                            {isLoading ? (
-                              <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <CheckIcon className="w-3.5 h-3.5 mr-1" />
-                            )}
-                            Ik neem dit mee
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-7 h-7 p-0 text-base"
+                              onClick={() => adjustQuantity(myClaim.id, item.id, (myClaim.quantity ?? 1) - 1)}
+                              disabled={isLoading}
+                            >
+                              −
+                            </Button>
+                            <span className="w-6 text-center text-sm font-medium tabular-nums">
+                              {isLoading ? <Loader2Icon className="w-3.5 h-3.5 animate-spin mx-auto" /> : (myClaim.quantity ?? 1)}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-7 h-7 p-0 text-base"
+                              onClick={() => adjustQuantity(myClaim.id, item.id, (myClaim.quantity ?? 1) + 1)}
+                              disabled={isLoading || !canIncreaseQty(item)}
+                            >
+                              +
+                            </Button>
+                          </div>
                         ) : (
                           <Button
                             variant="outline"
