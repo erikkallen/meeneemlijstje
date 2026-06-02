@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import { PlusIcon, Trash2Icon, CopyIcon, CheckIcon, UsersIcon, PencilIcon, XIcon } from "lucide-react";
 import type { List, Category, Item } from "@/lib/db/schema";
+import { cn } from "@/lib/utils";
 
 type GuestRow = { id: string; name: string };
 type ClaimRow = {
@@ -200,6 +201,12 @@ export function ListAdminView({ list: initialList, categories: initialCategories
     return claims.filter((c) => c.itemId === itemId);
   }
 
+  function totalQuantityForItem(itemId: string) {
+    return claims
+      .filter((c) => c.itemId === itemId)
+      .reduce((sum, c) => sum + (c.quantity ?? 1), 0);
+  }
+
   function claimerName(claim: ClaimRow) {
     if (claim.guestSessionId) {
       return guests.find((g) => g.id === claim.guestSessionId)?.name ?? "Gast";
@@ -360,7 +367,24 @@ export function ListAdminView({ list: initialList, categories: initialCategories
       {/* Items */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Items</CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base">Items</CardTitle>
+            {items.length > 0 && (() => {
+              const claimedCount = new Set(claims.map((c) => c.itemId)).size;
+              return (
+                <span className={cn(
+                  "text-xs rounded-full px-2 py-0.5 border font-medium",
+                  claimedCount === items.length
+                    ? "text-amber-700 bg-amber-50 border-amber-200"
+                    : claimedCount > 0
+                    ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                    : "text-muted-foreground border-transparent"
+                )}>
+                  {claimedCount}/{items.length} geregeld
+                </span>
+              );
+            })()}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {items.length === 0 && (
@@ -375,9 +399,12 @@ export function ListAdminView({ list: initialList, categories: initialCategories
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                   {cat.name}
                 </p>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {catItems.map((item) => {
                     const itemClaims = claimsForItem(item.id);
+                    const totalClaimed = totalQuantityForItem(item.id);
+                    const isFull = totalClaimed >= item.quantityNeeded;
+                    const isPartial = totalClaimed > 0 && !isFull;
                     const isEditing = editingItemId === item.id;
 
                     if (isEditing && editState) {
@@ -453,32 +480,62 @@ export function ListAdminView({ list: initialList, categories: initialCategories
                     return (
                       <div
                         key={item.id}
-                        className="flex items-start justify-between gap-2 py-1.5 px-2 rounded-md hover:bg-muted/50"
+                        className={cn(
+                          "flex items-start justify-between gap-2 py-1.5 px-2 rounded-md border-l-2 transition-colors",
+                          isFull
+                            ? "border-l-amber-400 bg-amber-50/50 hover:bg-amber-50"
+                            : isPartial
+                            ? "border-l-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/60"
+                            : "border-l-transparent hover:bg-muted/50"
+                        )}
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-medium">{item.name}</span>
+                            <span className={cn(
+                              "text-sm font-medium",
+                              isFull && "text-muted-foreground"
+                            )}>
+                              {item.name}
+                            </span>
+
+                            {/* quantity / progress */}
                             {item.quantityNeeded > 1 && (
-                              <Badge variant="secondary" className="text-xs">
-                                ×{item.quantityNeeded}
-                              </Badge>
+                              <span className={cn(
+                                "text-xs tabular-nums font-medium",
+                                isFull ? "text-amber-600"
+                                : isPartial ? "text-emerald-600"
+                                : "text-muted-foreground"
+                              )}>
+                                {list.allowMultipleClaimants
+                                  ? `${totalClaimed}/${item.quantityNeeded}`
+                                  : `×${item.quantityNeeded}`}
+                              </span>
                             )}
+
+                            {/* claimer chips */}
                             {itemClaims.map((claim) => (
                               <span
                                 key={claim.id}
-                                className="inline-flex items-center gap-1 text-xs bg-muted px-1.5 py-0.5 rounded-full"
+                                className="inline-flex items-center gap-1 text-xs bg-emerald-100 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded-full"
                               >
                                 {claimerName(claim)}
-                                {claim.quantity > 1 && <span className="text-muted-foreground">×{claim.quantity}</span>}
+                                {claim.quantity > 1 && (
+                                  <span className="text-emerald-600">×{claim.quantity}</span>
+                                )}
                                 <button
                                   onClick={() => releaseClaim(claim.id)}
-                                  className="text-muted-foreground hover:text-destructive ml-0.5 leading-none"
+                                  className="text-emerald-500 hover:text-red-500 ml-0.5 leading-none transition-colors"
                                   title="Claim vrijgeven"
                                 >
                                   <XIcon className="w-3 h-3" />
                                 </button>
                               </span>
                             ))}
+
+                            {/* full indicator when no showWhoBrings context */}
+                            {isFull && itemClaims.length === 0 && (
+                              <span className="text-xs text-amber-600 font-medium">vergeven</span>
+                            )}
                           </div>
                           {item.description && (
                             <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>

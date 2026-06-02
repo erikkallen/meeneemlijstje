@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckIcon, PlusIcon, Loader2Icon } from "lucide-react";
+import { Loader2Icon, CheckIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type Category = { id: string; name: string; sortOrder: number };
 type Item = {
@@ -49,18 +48,12 @@ export function GuestItemsView({
 
   const fetchData = useCallback(async () => {
     const res = await fetch(`/api/guest/list/${shareToken}`);
-    if (res.ok) {
-      const json = await res.json();
-      setData(json);
-    }
+    if (res.ok) setData(await res.json());
     setLoading(false);
   }, [shareToken]);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  // SSE: receive claim updates pushed by the server
   useEffect(() => {
     if (!data) return;
     const es = new EventSource(`/api/guest/list/${shareToken}/stream`);
@@ -99,17 +92,10 @@ export function GuestItemsView({
     setActionLoading(null);
   }
 
-  async function unclaim(claimId: string, itemId: string) {
-    setActionLoading(itemId);
-    await fetch(`/api/claims/${claimId}`, { method: "DELETE" });
-    await fetchData();
-    setActionLoading(null);
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2Icon className="w-6 h-6 animate-spin text-muted-foreground" />
+        <Loader2Icon className="w-5 h-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -117,14 +103,14 @@ export function GuestItemsView({
   if (!data) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-muted-foreground">List not found.</p>
+        <p className="text-muted-foreground">Lijst niet gevonden.</p>
       </div>
     );
   }
 
   const { list, categories, items, claims, currentGuestId } = data;
-
   const myClaims = claims.filter((c) => c.guestSessionId === currentGuestId);
+  const totalClaimed = new Set(claims.map((c) => c.itemId)).size;
 
   function myClaimForItem(itemId: string) {
     return myClaims.find((c) => c.itemId === itemId);
@@ -139,7 +125,6 @@ export function GuestItemsView({
   function canClaim(item: Item) {
     const total = totalQuantityForItem(item.id);
     if (list.allowMultipleClaimants) return total < item.quantityNeeded;
-    // Single-claimant mode: nobody else may have a claim
     return !claims.some((c) => c.itemId === item.id);
   }
 
@@ -147,15 +132,13 @@ export function GuestItemsView({
     return totalQuantityForItem(item.id) + 1 <= item.quantityNeeded;
   }
 
-  function claimersForItem(itemId: string): string[] {
+  function claimersForItem(itemId: string) {
     if (!list.showWhoBrings) return [];
     return claims
       .filter((c) => c.itemId === itemId && c.claimerName)
-      .map((c) => c.claimerName!);
+      .map((c) => ({ name: c.claimerName!, qty: c.quantity ?? 1, mine: c.guestSessionId === currentGuestId }));
   }
 
-  // Group items by category
-  const catMap = Object.fromEntries(categories.map((c) => [c.id, c.name]));
   const grouped: Record<string, Item[]> = { uncategorized: [] };
   for (const cat of categories) grouped[cat.id] = [];
   for (const item of items) {
@@ -169,129 +152,178 @@ export function GuestItemsView({
     { id: "uncategorized", name: "Overig" },
   ].filter((g) => (grouped[g.id] ?? []).length > 0);
 
+  const myTotal = myClaims.reduce((s, c) => s + (c.quantity ?? 1), 0);
+
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b">
-        <div className="max-w-2xl mx-auto px-4 py-4">
-          <h1 className="font-semibold text-lg">{list.name}</h1>
+      <header className="border-b bg-background sticky top-0 z-10">
+        <div className="max-w-xl mx-auto px-4 py-3">
+          <h1 className="font-semibold">{list.name}</h1>
           {list.description && (
-            <p className="text-sm text-muted-foreground mt-0.5">{list.description}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{list.description}</p>
           )}
-          <p className="text-sm text-muted-foreground mt-1">
-            Deelnemen als <span className="font-medium text-foreground">{guestName}</span>
-            {myClaims.length > 0 && (
-              <span className="ml-2">· neemt {myClaims.length} item{myClaims.length !== 1 ? "s" : ""} mee</span>
+          <div className="flex items-center gap-2 flex-wrap mt-1">
+            <span className="text-xs text-muted-foreground">
+              Deelnemen als <span className="font-medium text-foreground">{guestName}</span>
+            </span>
+            {myTotal > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+                <CheckIcon className="w-3 h-3" />
+                {myTotal} van jou
+              </span>
             )}
-          </p>
+            {items.length > 0 && (
+              <span className={cn(
+                "text-xs rounded-full px-2 py-0.5 border",
+                totalClaimed === items.length
+                  ? "text-amber-700 bg-amber-50 border-amber-200"
+                  : totalClaimed > 0
+                  ? "text-sky-700 bg-sky-50 border-sky-200"
+                  : "text-muted-foreground border-transparent"
+              )}>
+                {totalClaimed}/{items.length} geregeld
+              </span>
+            )}
+          </div>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      <main className="max-w-xl mx-auto px-4 py-4">
         {items.length === 0 && (
-          <p className="text-center text-muted-foreground py-12">
+          <p className="text-center text-muted-foreground py-16 text-sm">
             Er zijn nog geen items aan deze lijst toegevoegd.
           </p>
         )}
 
-        {orderedGroups.map((group) => (
-          <section key={group.id}>
-            {orderedGroups.length > 1 && (
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-                {group.name}
-              </h2>
-            )}
-            <div className="space-y-2">
-              {(grouped[group.id] ?? []).map((item) => {
-                const myClaim = myClaimForItem(item.id);
-                const total = totalQuantityForItem(item.id);
-                const claimers = claimersForItem(item.id);
-                const isFull = !canClaim(item) && !myClaim;
-                const isLoading = actionLoading === item.id;
+        <div className="space-y-6">
+          {orderedGroups.map((group) => (
+            <div key={group.id}>
+              {orderedGroups.length > 1 && (
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1 px-1">
+                  {group.name}
+                </p>
+              )}
 
-                return (
-                  <Card
-                    key={item.id}
-                    className={`transition-colors ${myClaim ? "border-primary/40 bg-primary/5" : isFull ? "opacity-60" : ""}`}
-                  >
-                    <CardContent className="py-3 px-4 flex items-start gap-3">
+              <div className="divide-y rounded-lg border overflow-hidden">
+                {(grouped[group.id] ?? []).map((item) => {
+                  const myClaim = myClaimForItem(item.id);
+                  const total = totalQuantityForItem(item.id);
+                  const claimers = claimersForItem(item.id);
+                  const isFull = !canClaim(item) && !myClaim;
+                  const isLoading = actionLoading === item.id;
+
+                  // Quantity progress for multi-claimant items
+                  const showProgress = list.allowMultipleClaimants && item.quantityNeeded > 1;
+                  const progressColor =
+                    total === 0 ? "text-muted-foreground"
+                    : total >= item.quantityNeeded ? "text-amber-600 font-medium"
+                    : "text-sky-600 font-medium";
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2.5 transition-colors",
+                        myClaim
+                          ? "bg-emerald-50/60 border-l-2 border-l-emerald-500"
+                          : isFull
+                          ? "bg-amber-50/40 border-l-2 border-l-amber-300"
+                          : "bg-background border-l-2 border-l-transparent"
+                      )}
+                    >
+                      {/* Item info */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`font-medium text-sm ${isFull && !myClaim ? "line-through text-muted-foreground" : ""}`}>
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                          <span className={cn(
+                            "text-sm font-medium leading-snug",
+                            isFull && !myClaim && "line-through text-muted-foreground"
+                          )}>
                             {item.name}
                           </span>
-                          {item.quantityNeeded > 1 && (
-                            <Badge variant="secondary" className="text-xs">
-                              {list.allowMultipleClaimants
-                                ? `${total}/${item.quantityNeeded}`
-                                : `×${item.quantityNeeded}`}
-                            </Badge>
+
+                          {showProgress && (
+                            <span className={cn("text-xs tabular-nums", progressColor)}>
+                              {total}/{item.quantityNeeded}
+                            </span>
                           )}
-                          {isFull && !myClaim && (
-                            <Badge variant="outline" className="text-xs">Geclaimd</Badge>
+                          {!list.allowMultipleClaimants && item.quantityNeeded > 1 && (
+                            <span className="text-xs text-muted-foreground tabular-nums">
+                              ×{item.quantityNeeded}
+                            </span>
                           )}
                         </div>
+
                         {item.description && (
-                          <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
+                          <p className="text-xs text-muted-foreground leading-snug mt-0.5">
+                            {item.description}
+                          </p>
                         )}
+
                         {list.showWhoBrings && claimers.length > 0 && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {claimers.join(", ")}
+                          <p className="text-xs mt-0.5 flex flex-wrap gap-x-1.5">
+                            {claimers.map((c, i) => (
+                              <span key={i} className={cn(
+                                c.mine
+                                  ? "text-emerald-700 font-medium"
+                                  : "text-muted-foreground"
+                              )}>
+                                {c.name}{c.qty > 1 ? ` ×${c.qty}` : ""}
+                              </span>
+                            ))}
                           </p>
                         )}
                         {!list.showWhoBrings && total > 0 && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {total} geclaimd
-                          </p>
+                          <p className="text-xs text-amber-600 mt-0.5">{total} toegezegd</p>
                         )}
                       </div>
+
+                      {/* Action */}
                       <div className="shrink-0">
                         {myClaim ? (
                           <div className="flex items-center gap-1">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="w-7 h-7 p-0 text-base"
+                            <button
                               onClick={() => adjustQuantity(myClaim.id, item.id, (myClaim.quantity ?? 1) - 1)}
                               disabled={isLoading}
+                              className="w-6 h-6 rounded border border-emerald-300 text-emerald-700 text-sm leading-none flex items-center justify-center hover:bg-emerald-100 disabled:opacity-40 transition-colors"
                             >
                               −
-                            </Button>
-                            <span className="w-6 text-center text-sm font-medium tabular-nums">
-                              {isLoading ? <Loader2Icon className="w-3.5 h-3.5 animate-spin mx-auto" /> : (myClaim.quantity ?? 1)}
+                            </button>
+                            <span className="w-5 text-center text-sm font-semibold text-emerald-700 tabular-nums">
+                              {isLoading
+                                ? <Loader2Icon className="w-3 h-3 animate-spin mx-auto text-emerald-600" />
+                                : (myClaim.quantity ?? 1)}
                             </span>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="w-7 h-7 p-0 text-base"
+                            <button
                               onClick={() => adjustQuantity(myClaim.id, item.id, (myClaim.quantity ?? 1) + 1)}
                               disabled={isLoading || !canIncreaseQty(item)}
+                              className="w-6 h-6 rounded border border-emerald-300 text-emerald-700 text-sm leading-none flex items-center justify-center hover:bg-emerald-100 disabled:opacity-40 transition-colors"
                             >
                               +
-                            </Button>
+                            </button>
                           </div>
+                        ) : isFull ? (
+                          <span className="text-xs text-amber-600 font-medium px-2 py-1 bg-amber-50 border border-amber-200 rounded">
+                            vergeven
+                          </span>
                         ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
+                          <button
                             onClick={() => claim(item.id)}
-                            disabled={isFull || isLoading}
+                            disabled={isLoading}
+                            className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded border border-emerald-400 text-emerald-700 font-medium hover:bg-emerald-500 hover:text-white hover:border-emerald-500 transition-colors disabled:opacity-40"
                           >
-                            {isLoading ? (
-                              <Loader2Icon className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <PlusIcon className="w-3.5 h-3.5 mr-1" />
-                            )}
-                            Ik neem dit mee
-                          </Button>
+                            {isLoading
+                              ? <Loader2Icon className="w-3 h-3 animate-spin" />
+                              : "neem ik mee"}
+                          </button>
                         )}
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </section>
-        ))}
+          ))}
+        </div>
       </main>
     </div>
   );

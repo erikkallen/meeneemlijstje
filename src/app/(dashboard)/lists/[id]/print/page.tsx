@@ -28,10 +28,7 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
   const itemIds = listItems.map((i) => i.id);
   const allClaims =
     itemIds.length > 0
-      ? await db
-          .select()
-          .from(claims)
-          .where(inArray(claims.itemId, itemIds))
+      ? await db.select().from(claims).where(inArray(claims.itemId, itemIds))
       : [];
 
   const guestIds = allClaims
@@ -47,24 +44,24 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
 
   function claimerName(claim: typeof allClaims[0]) {
     if (claim.guestSessionId) {
-      return guests.find((g) => g.id === claim.guestSessionId)?.name ?? "Guest";
+      return guests.find((g) => g.id === claim.guestSessionId)?.name ?? "Gast";
     }
     return session!.user.name;
   }
 
-  // By person
-  const byPerson: Record<string, string[]> = {};
+  // By person: name → [{ itemName, quantity }]
+  const byPerson: Record<string, { itemName: string; quantity: number }[]> = {};
   for (const claim of allClaims) {
     const name = claimerName(claim);
     const itemName = listItems.find((i) => i.id === claim.itemId)?.name ?? "Onbekend";
     if (!byPerson[name]) byPerson[name] = [];
-    byPerson[name].push(itemName);
+    byPerson[name].push({ itemName, quantity: claim.quantity ?? 1 });
   }
 
   // Category name lookup
   const catMap = Object.fromEntries(listCategories.map((c) => [c.id, c.name]));
 
-  // Items grouped
+  // Items grouped by category
   const grouped: Record<string, typeof listItems> = {};
   for (const item of listItems) {
     const key = item.categoryId ? catMap[item.categoryId] : "Overig";
@@ -74,7 +71,7 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div className="max-w-2xl mx-auto px-8 py-10 print:py-4 font-sans text-sm">
-      <div className="print:hidden mb-6 flex gap-3">
+      <div className="print:hidden mb-6">
         <PrintButton />
       </div>
 
@@ -85,16 +82,25 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
       <section className="mb-10">
         <h2 className="text-lg font-semibold border-b pb-1 mb-4">Wie neemt wat mee</h2>
         {Object.keys(byPerson).length === 0 ? (
-          <p className="text-muted-foreground italic">Niemand heeft nog items geclaimd.</p>
+          <p className="text-muted-foreground italic">Niemand heeft nog iets toegezegd.</p>
         ) : (
-          <dl className="space-y-3">
-            {Object.entries(byPerson).map(([person, personItems]) => (
+          <div className="space-y-4">
+            {Object.entries(byPerson).map(([person, entries]) => (
               <div key={person}>
-                <dt className="font-medium">{person}</dt>
-                <dd className="text-muted-foreground ml-4">{personItems.join(", ")}</dd>
+                <p className="font-semibold">{person}</p>
+                <ul className="mt-1 space-y-0.5">
+                  {entries.map((e, i) => (
+                    <li key={i} className="flex items-baseline gap-2 text-muted-foreground">
+                      <span className="w-6 text-right font-medium tabular-nums text-foreground shrink-0">
+                        {e.quantity}×
+                      </span>
+                      <span>{e.itemName}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
-          </dl>
+          </div>
         )}
       </section>
 
@@ -112,23 +118,34 @@ export default async function PrintPage({ params }: { params: Promise<{ id: stri
               <thead>
                 <tr className="border-b text-left">
                   <th className="pb-1 font-medium w-1/2">Item</th>
-                  <th className="pb-1 font-medium w-1/6 text-center">Aantal</th>
-                  <th className="pb-1 font-medium">Geclaimd door</th>
+                  <th className="pb-1 font-medium w-1/6 text-center">Nodig</th>
+                  <th className="pb-1 font-medium">Toegezegd door</th>
                 </tr>
               </thead>
               <tbody>
                 {catItems.map((item) => {
                   const itemClaims = allClaims.filter((c) => c.itemId === item.id);
                   return (
-                    <tr key={item.id} className="border-b border-dashed last:border-0">
+                    <tr key={item.id} className="border-b border-dashed last:border-0 align-top">
                       <td className="py-1.5">{item.name}</td>
-                      <td className="py-1.5 text-center text-muted-foreground">
+                      <td className="py-1.5 text-center text-muted-foreground tabular-nums">
                         {item.quantityNeeded}
                       </td>
-                      <td className="py-1.5 text-muted-foreground">
-                        {itemClaims.length === 0
-                          ? "—"
-                          : itemClaims.map(claimerName).join(", ")}
+                      <td className="py-1.5">
+                        {itemClaims.length === 0 ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          <ul className="space-y-0.5">
+                            {itemClaims.map((claim, i) => (
+                              <li key={i} className="flex items-baseline gap-1.5">
+                                <span className="font-medium tabular-nums text-foreground w-5 text-right shrink-0">
+                                  {claim.quantity ?? 1}×
+                                </span>
+                                <span className="text-muted-foreground">{claimerName(claim)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </td>
                     </tr>
                   );
