@@ -16,7 +16,10 @@ export default function JoinPage({ params }: { params: Promise<{ shareToken: str
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setError("Vul je naam in");
+      return;
+    }
     setLoading(true);
     setError("");
 
